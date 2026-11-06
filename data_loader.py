@@ -1,11 +1,38 @@
 import os
 import glob
+import hashlib
 import pandas as pd
 import streamlit as st
 from config import DATA_DIR
 
+CACHE_DIR = os.path.join(DATA_DIR, ".cache")
+os.makedirs(CACHE_DIR, exist_ok=True)
 
-@st.cache_data(ttl=300)
+CACHE_TTL = 3600
+
+
+def _parquet_path(filepath, sheet):
+    key = hashlib.md5(f"{filepath}:{sheet}:{os.path.getmtime(filepath)}".encode()).hexdigest()[:12]
+    safe_name = os.path.basename(filepath).replace(" ", "_").replace(".", "_")
+    return os.path.join(CACHE_DIR, f"{safe_name}_{sheet}_{key}.parquet")
+
+
+def _read_sheet(filepath, sheet, header=0):
+    pq = _parquet_path(filepath, sheet)
+    if os.path.exists(pq):
+        return pd.read_parquet(pq)
+    df = pd.read_excel(filepath, sheet_name=sheet, header=header)
+    try:
+        for col in df.columns:
+            if df[col].dtype == "object":
+                df[col] = df[col].astype(str).replace("nan", pd.NA)
+        df.to_parquet(pq, index=False)
+    except Exception:
+        pass
+    return df
+
+
+@st.cache_data(ttl=CACHE_TTL)
 def find_data_files():
     cellhr_pattern = os.path.join(DATA_DIR, "Cellhr Daily review*.xlsx")
     summary_pattern = os.path.join(DATA_DIR, "SUMMARY_AYY*.xlsx")
@@ -14,7 +41,7 @@ def find_data_files():
     return cellhr_files, summary_files
 
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=CACHE_TTL)
 def load_cellhr_report(filepath):
     try:
         df = pd.read_excel(filepath, sheet_name="Cell_h Report", header=None)
@@ -39,14 +66,12 @@ def load_cellhr_report(filepath):
         return []
 
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=CACHE_TTL)
 def load_cellhr_detail(filepath):
     try:
-        df = pd.read_excel(filepath, sheet_name="Cell_h Detail", header=1)
-        # Clean column names: replace newlines with spaces
+        df = _read_sheet(filepath, "Cell_h Detail", header=1)
         df.columns = [str(c).replace("\n", " ").strip() for c in df.columns]
 
-        # Drop rows where SITE_ID is missing
         site_col_candidates = [c for c in df.columns if "SITE_ID" in c.upper()]
         if site_col_candidates:
             df = df.dropna(subset=[site_col_candidates[0]])
@@ -75,7 +100,7 @@ def load_cellhr_detail(filepath):
             elif "duration after reduction" in col_lower:
                 col_map["duration"] = col
             elif col_lower == "duration" and "duration" not in col_map:
-                pass  # Skip — this col is actually Start Time in the Excel
+                pass
             elif "vcm branch" in col_lower:
                 col_map["branch"] = col
             elif col_lower == "team":
@@ -102,7 +127,6 @@ def load_cellhr_detail(filepath):
             elif "cabinet" in col_lower:
                 col_map["cabinet_type"] = col
 
-        # Also try to find Cell*h if not yet matched
         if "cellhr" not in col_map:
             for col in df.columns:
                 if "cell*h" in col.lower():
@@ -122,92 +146,82 @@ def load_cellhr_detail(filepath):
         return pd.DataFrame(), {}
 
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=CACHE_TTL)
 def load_tco_power(filepath):
     try:
-        df = pd.read_excel(filepath, sheet_name="TCO power")
-        return df
+        return _read_sheet(filepath, "TCO power")
     except Exception:
         return pd.DataFrame()
 
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=CACHE_TTL)
 def load_mytel_power(filepath):
     try:
-        df = pd.read_excel(filepath, sheet_name="Mytel power")
-        return df
+        return _read_sheet(filepath, "Mytel power")
     except Exception:
         return pd.DataFrame()
 
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=CACHE_TTL)
 def load_tx_report(filepath):
     try:
-        df = pd.read_excel(filepath, sheet_name="TX report")
-        return df
+        return _read_sheet(filepath, "TX report")
     except Exception:
         return pd.DataFrame()
 
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=CACHE_TTL)
 def load_tx_detail(filepath):
     try:
-        df = pd.read_excel(filepath, sheet_name="TX Detail")
-        return df
+        return _read_sheet(filepath, "TX Detail")
     except Exception:
         return pd.DataFrame()
 
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=CACHE_TTL)
 def load_hub_down(filepath):
     try:
-        df = pd.read_excel(filepath, sheet_name="Hub down")
-        return df
+        return _read_sheet(filepath, "Hub down")
     except Exception:
         return pd.DataFrame()
 
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=CACHE_TTL)
 def load_manpower(filepath):
     try:
-        df = pd.read_excel(filepath, sheet_name="Manpower")
-        return df
+        return _read_sheet(filepath, "Manpower")
     except Exception:
         return pd.DataFrame()
 
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=CACHE_TTL)
 def load_site_database(filepath):
     try:
-        df = pd.read_excel(filepath, sheet_name="AYY_Site database")
-        return df
+        return _read_sheet(filepath, "AYY_Site database")
     except Exception:
         return pd.DataFrame()
 
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=CACHE_TTL)
 def load_cable_routes(filepath):
     try:
-        df = pd.read_excel(filepath, sheet_name="Cable Routes Database")
-        return df
+        return _read_sheet(filepath, "Cable Routes Database")
     except Exception:
         return pd.DataFrame()
 
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=CACHE_TTL)
 def load_flood_sites(filepath):
     try:
-        df = pd.read_excel(filepath, sheet_name="Flood sites")
-        return df
+        return _read_sheet(filepath, "Flood sites")
     except Exception:
         return pd.DataFrame()
 
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=CACHE_TTL)
 def load_mw_links(filepath):
     try:
-        df = pd.read_excel(filepath, sheet_name="AYY_MW link")
-        return df
+        return _read_sheet(filepath, "AYY_MW link")
     except Exception:
         return pd.DataFrame()
 
