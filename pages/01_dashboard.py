@@ -50,8 +50,7 @@ with tab_upload:
                     f.write(uf.getbuffer())
                 saved += 1
             st.success(f"✅ {'Đã lưu' if lang == 'vi' else 'Saved'} {saved} file(s) → `{DATA_DIR}`")
-            st.info("🔄 " + ("Tải lại trang để sử dụng dữ liệu mới" if lang == "vi"
-                              else "Reload the page to use new data"))
+            st.cache_data.clear()
             st.rerun()
     else:
         st.info("📁 " + ("Kéo thả file Excel vào đây hoặc bấm Browse" if lang == "vi"

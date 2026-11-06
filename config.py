@@ -7,6 +7,9 @@ BRANCH = "AYY Branch - VCM Myanmar"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(os.path.dirname(BASE_DIR))
+if not os.path.exists(DATA_DIR) or DATA_DIR == "/mount/src":
+    DATA_DIR = os.path.join(BASE_DIR, "data")
+    os.makedirs(DATA_DIR, exist_ok=True)
 
 CELLHR_TARGET = 2000
 TOTAL_SITES = 619
