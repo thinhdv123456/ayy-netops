@@ -19,47 +19,8 @@ tab_live, tab_history, tab_upload = st.tabs([
     "📤 " + ("Tải file mới" if lang == "vi" else "Upload New File"),
 ])
 
-with tab_live:
-    cellhr_files, summary_files = find_data_files()
-    if not cellhr_files:
-        st.warning("Không tìm thấy file Cellhr Daily review*.xlsx" if lang == "vi"
-                    else "No Cellhr Daily review*.xlsx found")
-        st.info(f"📁 Data directory: `{DATA_DIR}`")
-        st.stop()
-
-    selected_cellhr = st.selectbox(
-        "📂 Cellhr file:",
-        cellhr_files,
-        format_func=lambda x: os.path.basename(x),
-    )
-
-    imported, import_info = is_file_imported(selected_cellhr)
-    if imported:
-        st.success(f"✅ {'Đã lưu vào DB' if lang == 'vi' else 'Already in DB'} — {import_info[2]}")
-    else:
-        if st.button("💾 " + ("Lưu vào Database" if lang == "vi" else "Save to Database"), type="primary"):
-            with st.spinner("Importing..." if lang == "en" else "Đang nhập..."):
-                detail_df, col_map = load_cellhr_detail(selected_cellhr)
-                tco_df = load_tco_power(selected_cellhr)
-                mytel_df = load_mytel_power(selected_cellhr)
-                tx_df = pd.DataFrame()
-                ok, msg = import_cellhr_file(selected_cellhr, detail_df, col_map, tco_df, mytel_df, tx_df)
-                if ok:
-                    st.success(f"✅ {msg}")
-                    st.rerun()
-                else:
-                    st.warning(msg)
-
-    detail_df, col_map = load_cellhr_detail(selected_cellhr)
-    selected_summary = summary_files[0] if summary_files else None
-
-with tab_history:
-    history = get_import_history()
-    if history.empty:
-        st.info("Chưa có dữ liệu trong database" if lang == "vi" else "No data in database yet")
-    else:
-        st.dataframe(history[["filename", "import_date", "period_start", "period_end", "total_records", "total_cellhr"]],
-                      use_container_width=True, hide_index=True)
+cellhr_files, summary_files = find_data_files()
+has_data = bool(cellhr_files)
 
 with tab_upload:
     st.markdown("### 📤 " + ("Tải dữ liệu mới" if lang == "vi" else "Upload New Data"))
@@ -105,6 +66,49 @@ with tab_upload:
             st.caption(f"📄 {f} ({size_kb:.0f} KB)")
     else:
         st.caption("(" + ("Chưa có file" if lang == "vi" else "No files yet") + ")")
+
+with tab_live:
+    if not has_data:
+        st.warning("Không tìm thấy file Cellhr Daily review*.xlsx" if lang == "vi"
+                    else "No Cellhr Daily review*.xlsx found")
+        st.info(f"📁 Data directory: `{DATA_DIR}`")
+        st.caption("👉 " + ("Vào tab 'Tải file mới' để upload dữ liệu" if lang == "vi"
+                             else "Go to 'Upload New File' tab to upload data"))
+        st.stop()
+
+    selected_cellhr = st.selectbox(
+        "📂 Cellhr file:",
+        cellhr_files,
+        format_func=lambda x: os.path.basename(x),
+    )
+
+    imported, import_info = is_file_imported(selected_cellhr)
+    if imported:
+        st.success(f"✅ {'Đã lưu vào DB' if lang == 'vi' else 'Already in DB'} — {import_info[2]}")
+    else:
+        if st.button("💾 " + ("Lưu vào Database" if lang == "vi" else "Save to Database"), type="primary"):
+            with st.spinner("Importing..." if lang == "en" else "Đang nhập..."):
+                detail_df, col_map = load_cellhr_detail(selected_cellhr)
+                tco_df = load_tco_power(selected_cellhr)
+                mytel_df = load_mytel_power(selected_cellhr)
+                tx_df = pd.DataFrame()
+                ok, msg = import_cellhr_file(selected_cellhr, detail_df, col_map, tco_df, mytel_df, tx_df)
+                if ok:
+                    st.success(f"✅ {msg}")
+                    st.rerun()
+                else:
+                    st.warning(msg)
+
+    detail_df, col_map = load_cellhr_detail(selected_cellhr)
+    selected_summary = summary_files[0] if summary_files else None
+
+with tab_history:
+    history = get_import_history()
+    if history.empty:
+        st.info("Chưa có dữ liệu trong database" if lang == "vi" else "No data in database yet")
+    else:
+        st.dataframe(history[["filename", "import_date", "period_start", "period_end", "total_records", "total_cellhr"]],
+                      use_container_width=True, hide_index=True)
 
 # === KPI METRICS ===
 if detail_df.empty:
