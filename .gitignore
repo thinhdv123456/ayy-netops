@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+*.db
+*.sqlite3
+ayy_actions.json
+.DS_Store
+*.xlsx
+*.xls
