@@ -5,7 +5,7 @@ import pandas as pd
 from datetime import datetime
 from config import DATA_DIR, CELLHR_TARGET, BASE_DIR
 from i18n import t
-from data_loader import find_data_files, load_cellhr_detail, load_tco_power, load_mytel_power, load_manpower
+from session_data import require_data
 from database import query_cellhr_events, query_cellhr_summary, get_import_history
 
 TEMPLATE_DIR = os.path.join(BASE_DIR, "templates")
@@ -13,12 +13,9 @@ TEMPLATE_DIR = os.path.join(BASE_DIR, "templates")
 lang = st.session_state.get("lang", "vi")
 st.markdown(f"## 📈 {t('reports', lang)}")
 
-cellhr_files, summary_files = find_data_files()
-
-if not cellhr_files:
-    st.warning("Không tìm thấy file dữ liệu. Vui lòng upload file ở trang Dashboard." if lang == "vi"
-               else "No data files found. Please upload files on the Dashboard page.")
-    st.stop()
+data = require_data(lang)
+detail_df = data["cellhr_detail"]
+col_map = data["col_map"]
 
 tab_weekly, tab_excel, tab_db_report = st.tabs([
     f"📊 {t('weekly', lang)} PPTX",
@@ -29,13 +26,10 @@ tab_weekly, tab_excel, tab_db_report = st.tabs([
 with tab_weekly:
     st.subheader("Weekly PPTX Report")
     st.info("💡 " + (
-        "Chức năng xuất PPTX tự động từ template Week Report. Chọn file dữ liệu và template để tạo báo cáo."
+        "Chức năng xuất PPTX tự động từ template Week Report. Chọn template để tạo báo cáo."
         if lang == "vi" else
-        "Auto-generate weekly PPTX from template. Select data file and template."
+        "Auto-generate weekly PPTX from template. Select template to generate."
     ))
-
-    data_file = st.selectbox("📂 Data file:", cellhr_files,
-                             format_func=lambda x: os.path.basename(x), key="rpt_data")
 
     all_templates = {}
     for search_dir in [TEMPLATE_DIR, DATA_DIR]:
@@ -78,12 +72,8 @@ with tab_weekly:
 with tab_excel:
     st.subheader(t("export_excel", lang))
 
-    data_file2 = st.selectbox("📂 Data file:", cellhr_files,
-                               format_func=lambda x: os.path.basename(x), key="excel_data")
-    detail_df, col_map = load_cellhr_detail(data_file2)
-
     if detail_df.empty:
-        st.warning("Không thể đọc dữ liệu từ file" if lang == "vi" else "Cannot read data from file")
+        st.warning("Không thể đọc dữ liệu" if lang == "vi" else "Cannot read data")
     else:
         total_cellhr = detail_df[col_map["cellhr"]].sum() if "cellhr" in col_map else 0
         total_events = len(detail_df)
@@ -145,18 +135,17 @@ with tab_db_report:
     history = get_import_history()
     if history.empty:
         st.info("💡 " + (
-            "Chưa có dữ liệu trong database. Để sử dụng, vào trang Dashboard → tab 'File trực tiếp' → bấm 'Lưu vào Database'."
+            "Chưa có dữ liệu trong database."
             if lang == "vi" else
-            "No data in database. Go to Dashboard → 'Live File' tab → click 'Save to Database' to import."
+            "No data in database."
         ))
 
         st.divider()
-        st.markdown("**" + ("Tóm tắt từ file hiện tại:" if lang == "vi" else "Summary from current file:") + "**")
-        detail_df3, col_map3 = load_cellhr_detail(cellhr_files[0])
-        if not detail_df3.empty:
-            if "reason_level1" in col_map3 and "cellhr" in col_map3:
-                cause_df = detail_df3.groupby(col_map3["reason_level1"]).agg({
-                    col_map3["cellhr"]: ["sum", "count"],
+        st.markdown("**" + ("Tóm tắt từ dữ liệu hiện tại:" if lang == "vi" else "Summary from current data:") + "**")
+        if not detail_df.empty:
+            if "reason_level1" in col_map and "cellhr" in col_map:
+                cause_df = detail_df.groupby(col_map["reason_level1"]).agg({
+                    col_map["cellhr"]: ["sum", "count"],
                 }).reset_index()
                 cause_df.columns = [
                     "Nguyên nhân" if lang == "vi" else "Cause",
@@ -166,8 +155,8 @@ with tab_db_report:
                 cause_df = cause_df.sort_values(cause_df.columns[1], ascending=False)
                 st.dataframe(cause_df, use_container_width=True, hide_index=True)
 
-            if "team" in col_map3 and "cellhr" in col_map3:
-                team_df = detail_df3.groupby(col_map3["team"])[col_map3["cellhr"]].sum().reset_index()
+            if "team" in col_map and "cellhr" in col_map:
+                team_df = detail_df.groupby(col_map["team"])[col_map["cellhr"]].sum().reset_index()
                 team_df.columns = [
                     "Team",
                     "Tổng Cell*h" if lang == "vi" else "Total Cell*h",

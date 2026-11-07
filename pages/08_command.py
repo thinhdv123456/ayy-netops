@@ -4,18 +4,13 @@ import plotly.graph_objects as go
 import pandas as pd
 from config import CELLHR_TARGET, TOTAL_SITES, CAUSE_COLORS, CHART_LAYOUT
 from i18n import t
-from data_loader import find_data_files, load_cellhr_detail, load_manpower
+from session_data import require_data
 
 lang = st.session_state.get("lang", "vi")
 st.markdown(f"## 🎯 {t('command_center', lang)}")
 
-cellhr_files, summary_files = find_data_files()
-if not cellhr_files:
-    st.warning(t("no_data", lang))
-    st.stop()
-
-selected = cellhr_files[-1]
-detail_df, col_map = load_cellhr_detail(selected)
+data = require_data(lang)
+detail_df, col_map = data["cellhr_detail"], data["col_map"]
 
 if detail_df.empty:
     st.warning(t("no_data", lang))

@@ -5,20 +5,15 @@ import plotly.express as px
 import pandas as pd
 from config import CELLHR_TARGET, CAUSE_COLORS, DATA_DIR, CHART_LAYOUT
 from i18n import t
-from data_loader import find_data_files, load_cellhr_detail
-from database import query_cellhr_events, query_cellhr_summary, query_site_history, get_all_sites
+from session_data import require_data
+from database import query_site_history
 
 lang = st.session_state.get("lang", "vi")
 st.markdown(f"## 📊 {t('cellhr_analysis', lang)}")
 
-# Load data
-cellhr_files, _ = find_data_files()
-if not cellhr_files:
-    st.warning(t("no_data", lang))
-    st.stop()
-
-selected = st.selectbox("📂 File:", cellhr_files, format_func=lambda x: os.path.basename(x), key="cellhr_file")
-detail_df, col_map = load_cellhr_detail(selected)
+data = require_data(lang)
+detail_df = data["cellhr_detail"]
+col_map = data["col_map"]
 
 if detail_df.empty:
     st.warning(t("no_data", lang))

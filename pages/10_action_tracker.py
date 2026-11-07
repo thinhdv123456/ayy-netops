@@ -5,7 +5,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 from config import DATA_DIR
 from i18n import t
-from data_loader import find_data_files, load_cellhr_detail
+from session_data import require_data, get_data
 
 lang = st.session_state.get("lang", "vi")
 st.markdown(f"## 📋 {t('action_tracker', lang)}")
@@ -21,6 +21,7 @@ def load_actions():
 
 
 def save_actions(actions):
+    os.makedirs(os.path.dirname(ACTIONS_FILE), exist_ok=True)
     with open(ACTIONS_FILE, "w", encoding="utf-8") as f:
         json.dump(actions, f, ensure_ascii=False, indent=2)
 
@@ -71,11 +72,11 @@ with tab_completed:
 with tab_suggest:
     st.subheader("💡 " + ("Đề xuất tự động từ dữ liệu" if lang == "vi" else "Auto suggestions from data"))
 
-    cellhr_files, _ = find_data_files()
-    if cellhr_files:
-        detail_df, col_map = load_cellhr_detail(cellhr_files[-1])
+    app_data = get_data()
+    if app_data and app_data.get("has_data"):
+        detail_df = app_data["cellhr_detail"]
+        col_map = app_data["col_map"]
         if not detail_df.empty and "site_id" in col_map and "cellhr" in col_map:
-            # Sites with high Cell*h — suggest PM
             worst = detail_df.groupby(col_map["site_id"])[col_map["cellhr"]].sum().reset_index()
             worst.columns = ["site_id", "cellhr"]
             worst = worst.sort_values("cellhr", ascending=False).head(5)
@@ -108,7 +109,6 @@ with tab_suggest:
                             save_actions(actions)
                             st.rerun()
 
-            # Recurring fault sites
             if "reason_level1" in col_map:
                 recurring = detail_df.groupby(col_map["site_id"]).size().reset_index(name="events")
                 recurring = recurring[recurring["events"] >= 5].sort_values("events", ascending=False)
@@ -117,6 +117,9 @@ with tab_suggest:
                     st.markdown("### " + ("Trạm lỗi lặp nhiều lần" if lang == "vi" else "Recurring fault sites"))
                     for _, row in recurring.head(5).iterrows():
                         st.markdown(f"🔄 {row['site_id']} — {row['events']} events")
+    else:
+        st.info("📂 " + ("Chưa có dữ liệu. Vui lòng upload file ở Dashboard." if lang == "vi"
+                          else "No data. Please upload files on Dashboard."))
 
 with tab_add:
     st.subheader("➕ " + ("Thêm hành động mới" if lang == "vi" else "Add new action"))

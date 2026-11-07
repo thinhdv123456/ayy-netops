@@ -4,17 +4,12 @@ import plotly.graph_objects as go
 import pandas as pd
 from config import CAUSE_COLORS, TCO_COMPANIES, DATA_DIR, CHART_LAYOUT
 from i18n import t
-from data_loader import find_data_files, load_cellhr_detail, load_tco_power, load_mytel_power
+from session_data import require_data
 
 lang = st.session_state.get("lang", "vi")
 st.markdown(f"## 🔋 {t('power_mgmt', lang)}")
 
-cellhr_files, _ = find_data_files()
-if not cellhr_files:
-    st.warning(t("no_data", lang))
-    st.stop()
-
-selected = st.selectbox("📂 File:", cellhr_files, format_func=lambda x: os.path.basename(x), key="power_file")
+data = require_data(lang)
 
 tab_tco, tab_mytel, tab_overview = st.tabs([
     f"🏭 {t('tco_analysis', lang)}",
@@ -24,7 +19,7 @@ tab_tco, tab_mytel, tab_overview = st.tabs([
 
 # === TCO POWER ===
 with tab_tco:
-    tco_df = load_tco_power(selected)
+    tco_df = data.get("tco_power", pd.DataFrame())
     if tco_df.empty:
         st.info(t("no_data", lang))
     else:
@@ -84,7 +79,7 @@ with tab_tco:
 
 # === MYTEL POWER ===
 with tab_mytel:
-    mytel_df = load_mytel_power(selected)
+    mytel_df = data.get("mytel_power", pd.DataFrame())
     if mytel_df.empty:
         st.info(t("no_data", lang))
     else:
@@ -128,7 +123,7 @@ with tab_mytel:
 
 # === OVERVIEW ===
 with tab_overview:
-    detail_df, col_map = load_cellhr_detail(selected)
+    detail_df, col_map = data["cellhr_detail"], data["col_map"]
     if not detail_df.empty and "reason_level1" in col_map and "cellhr" in col_map:
         power_causes = ["Towerco power issue", "Mytel Power Issue", "Power down at HUB site"]
         power_df = detail_df[detail_df[col_map["reason_level1"]].isin(power_causes)]

@@ -4,19 +4,13 @@ import plotly.graph_objects as go
 import pandas as pd
 from config import TOTAL_SITES, CHART_LAYOUT
 from i18n import t
-from data_loader import find_data_files, load_cellhr_detail, load_site_database, load_flood_sites
+from session_data import require_data
 from database import query_site_history
 
 lang = st.session_state.get("lang", "vi")
 st.markdown(f"## 🏗️ {t('site_mgmt', lang)}")
 
-cellhr_files, summary_files = find_data_files()
-if not cellhr_files:
-    st.warning(t("no_data", lang))
-    st.stop()
-
-selected_cellhr = st.selectbox("📂 Cellhr:", cellhr_files, format_func=lambda x: os.path.basename(x), key="site_cellhr")
-selected_summary = summary_files[0] if summary_files else None
+data = require_data(lang)
 
 tab_db, tab_detail, tab_special = st.tabs([
     f"📋 {'CSDL Trạm' if lang == 'vi' else 'Site Database'}",
@@ -25,8 +19,8 @@ tab_db, tab_detail, tab_special = st.tabs([
 ])
 
 with tab_db:
-    if selected_summary:
-        site_db = load_site_database(selected_summary)
+    site_db = data.get("site_db", pd.DataFrame())
+    if not site_db.empty:
         if site_db.empty:
             st.info(t("no_data", lang))
         else:
@@ -43,7 +37,7 @@ with tab_db:
         st.info("SUMMARY_AYY Database.xlsx not found")
 
 with tab_detail:
-    detail_df, col_map = load_cellhr_detail(selected_cellhr)
+    detail_df, col_map = data["cellhr_detail"], data["col_map"]
     if detail_df.empty:
         st.info(t("no_data", lang))
     else:
@@ -114,17 +108,17 @@ with tab_special:
     sp1, sp2 = st.columns(2)
     with sp1:
         st.subheader(f"🌊 {t('flood_sites', lang)}")
-        if selected_summary:
-            flood = load_flood_sites(selected_summary)
-            if flood.empty:
-                st.info(t("no_data", lang))
-            else:
-                st.markdown(f"**{len(flood)}** {'trạm ngập lụt' if lang == 'vi' else 'flood sites'}")
-                st.dataframe(flood, use_container_width=True, hide_index=True)
+        flood = data.get("flood_sites", pd.DataFrame())
+        if flood.empty:
+            st.info(t("no_data", lang))
+        else:
+            st.markdown(f"**{len(flood)}** {'trạm ngập lụt' if lang == 'vi' else 'flood sites'}")
+            st.dataframe(flood, use_container_width=True, hide_index=True)
 
     with sp2:
         st.subheader(f"⚠️ {t('unsafe_sites', lang)}")
-        detail_df2, col_map2 = load_cellhr_detail(selected_cellhr)
+        col_map2 = data["col_map"]
+        detail_df2 = data["cellhr_detail"]
         if not detail_df2.empty and "unsafe" in col_map2:
             unsafe = detail_df2[detail_df2[col_map2["unsafe"]].astype(str).str.lower().str.contains("unsafe", na=False)]
             if unsafe.empty:

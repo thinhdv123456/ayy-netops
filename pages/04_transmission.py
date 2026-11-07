@@ -4,17 +4,12 @@ import plotly.graph_objects as go
 import pandas as pd
 from config import CHART_LAYOUT
 from i18n import t
-from data_loader import find_data_files, load_tx_report, load_tx_detail, load_cellhr_detail
+from session_data import require_data
 
 lang = st.session_state.get("lang", "vi")
 st.markdown(f"## 📡 {t('transmission', lang)}")
 
-cellhr_files, _ = find_data_files()
-if not cellhr_files:
-    st.warning(t("no_data", lang))
-    st.stop()
-
-selected = st.selectbox("📂 File:", cellhr_files, format_func=lambda x: os.path.basename(x), key="tx_file")
+data = require_data(lang)
 
 tab_incidents, tab_routes, tab_detail = st.tabs([
     f"📋 {t('incident_list', lang)}",
@@ -23,7 +18,7 @@ tab_incidents, tab_routes, tab_detail = st.tabs([
 ])
 
 with tab_incidents:
-    tx_report = load_tx_report(selected)
+    tx_report = data.get("tx_report", pd.DataFrame())
     if tx_report.empty:
         st.info(t("no_data", lang))
     else:
@@ -31,7 +26,7 @@ with tab_incidents:
         st.dataframe(tx_report, use_container_width=True, hide_index=True)
 
 with tab_routes:
-    tx_detail = load_tx_detail(selected)
+    tx_detail = data.get("tx_detail", pd.DataFrame())
     if tx_detail.empty:
         st.info(t("no_data", lang))
     else:
@@ -65,7 +60,7 @@ with tab_routes:
             st.dataframe(tx_detail, use_container_width=True, hide_index=True)
 
 with tab_detail:
-    detail_df, col_map = load_cellhr_detail(selected)
+    detail_df, col_map = data["cellhr_detail"], data["col_map"]
     if not detail_df.empty and "reason_level1" in col_map:
         tx_events = detail_df[detail_df[col_map["reason_level1"]] == "Transmission"]
         if tx_events.empty:
