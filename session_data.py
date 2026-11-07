@@ -116,8 +116,8 @@ def process_uploads(cellhr_bytes, summary_bytes=None):
     except Exception:
         data["cellhr_report"] = []
 
-    data["tco_power"] = _safe_read(cellhr_bytes, "TCO power")
-    data["mytel_power"] = _safe_read(cellhr_bytes, "Mytel power")
+    data["tco_power"] = _safe_read(cellhr_bytes, "TCO power", header=1)
+    data["mytel_power"] = _safe_read(cellhr_bytes, "Mytel power", header=1)
     data["tx_report"] = _safe_read(cellhr_bytes, "TX report")
     data["tx_detail"] = _safe_read(cellhr_bytes, "TX Detail")
     data["hub_down"] = _safe_read(cellhr_bytes, "Hub down")

@@ -26,9 +26,11 @@ tab_weekly, tab_excel, tab_db_report = st.tabs([
 with tab_weekly:
     st.subheader("Weekly PPTX Report")
     st.info("💡 " + (
-        "Chức năng xuất PPTX tự động từ template Week Report. Chọn template để tạo báo cáo."
+        "Tự động điền dữ liệu Cell*h, TCO, Power, Transmission vào template PPTX. "
+        "Các slide khác (PM, M&E, HR, Finance, Admin, Business) giữ nguyên để bạn điền thủ công."
         if lang == "vi" else
-        "Auto-generate weekly PPTX from template. Select template to generate."
+        "Auto-fill Cell*h, TCO, Power, Transmission data into PPTX template. "
+        "Other slides (PM, M&E, HR, Finance, Admin, Business) are kept as-is for manual editing."
     ))
 
     all_templates = {}
@@ -38,28 +40,55 @@ with tab_weekly:
                 if f.endswith(".pptx") and "Week" in f:
                     all_templates[f] = os.path.join(search_dir, f)
 
-    if not all_templates:
-        st.warning("⚠️ " + (
-            "Chưa có file template PPTX."
-            if lang == "vi" else
-            "No PPTX templates found."
-        ))
-    else:
+    uploaded_tpl = st.file_uploader(
+        "📝 " + ("Tải lên template PPTX của bạn (tùy chọn)" if lang == "vi"
+                  else "Upload your own PPTX template (optional)"),
+        type=["pptx"], key="upload_template",
+    )
+
+    template_path = None
+    template_bytes = None
+    if uploaded_tpl:
+        template_bytes = uploaded_tpl.getvalue()
+        st.success(f"✅ Template: {uploaded_tpl.name}")
+    elif all_templates:
         template_names = list(all_templates.keys())
         template = st.selectbox("📝 Template:", template_names, key="rpt_template")
         template_path = all_templates[template]
+    else:
+        st.warning("⚠️ " + (
+            "Chưa có file template. Vui lòng upload template PPTX."
+            if lang == "vi" else
+            "No template found. Please upload a PPTX template."
+        ))
 
-        week_num = st.number_input("Week #", min_value=1, max_value=52, value=45)
+    week_num = st.number_input("Week #", min_value=1, max_value=52, value=45)
 
-        if st.button("🚀 " + ("Tạo báo cáo" if lang == "vi" else "Generate Report"), type="primary"):
+        st.markdown("**" + ("Dữ liệu sẽ được tự động điền vào:" if lang == "vi" else "Data will be auto-filled into:") + "**")
+        auto_items = [
+            "Slide 2: Cell*h overview (biểu đồ + số liệu)" if lang == "vi" else "Slide 2: Cell*h overview (charts + data)",
+            "Slide 3: TCO worst sites" if lang == "vi" else "Slide 3: TCO worst sites",
+            "Slide 4: Power worst sites" if lang == "vi" else "Slide 4: Power worst sites",
+            "Slide 16-17: Transmission incidents" if lang == "vi" else "Slide 16-17: Transmission incidents",
+            "Slide cuối: Ngày báo cáo" if lang == "vi" else "Last slide: Report date",
+        ]
+        for item in auto_items:
+            st.markdown(f"  - {item}")
+
+    if (template_path or template_bytes) and st.button("🚀 " + ("Tạo báo cáo" if lang == "vi" else "Generate Report"), type="primary"):
             try:
-                from pptx import Presentation
-                prs = Presentation(template_path)
+                from report_generator import generate_report
+                with st.spinner("Đang tạo báo cáo..." if lang == "vi" else "Generating report..."):
+                    if template_bytes:
+                        import tempfile
+                        with tempfile.NamedTemporaryFile(suffix=".pptx", delete=False) as tmp:
+                            tmp.write(template_bytes)
+                            tmp_path = tmp.name
+                        buf = generate_report(tmp_path, data, week_num)
+                        os.unlink(tmp_path)
+                    else:
+                        buf = generate_report(template_path, data, week_num)
                 output_name = f"Week-{week_num}_Report_{datetime.now().strftime('%d_%b_%y')}.pptx"
-
-                buf = io.BytesIO()
-                prs.save(buf)
-                buf.seek(0)
 
                 st.success(f"✅ {output_name}")
                 st.download_button(
@@ -68,6 +97,8 @@ with tab_weekly:
                 )
             except Exception as e:
                 st.error(f"Error: {e}")
+                import traceback
+                st.code(traceback.format_exc())
 
 with tab_excel:
     st.subheader(t("export_excel", lang))
