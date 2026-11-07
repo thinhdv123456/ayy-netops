@@ -169,6 +169,7 @@ def process_uploads(cellhr_bytes, summary_bytes=None):
 
     data["has_data"] = True
     data["_cellhr_hash"] = cellhr_h
+    data["_cellhr_bytes"] = cellhr_bytes
     if summary_bytes:
         data["_summary_hash"] = _file_hash(summary_bytes)
     st.session_state["app_data"] = data

@@ -3,18 +3,9 @@ import pandas as pd
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import matplotlib.ticker as mticker
 from pptx import Presentation
-from pptx.util import Inches, Pt, Emu
-from pptx.enum.text import PP_ALIGN
+from pptx.util import Pt
 from datetime import datetime
-
-
-def _find_shape_by_name(slide, name_fragment):
-    for shape in slide.shapes:
-        if name_fragment.lower() in shape.name.lower():
-            return shape
-    return None
 
 
 def _find_title_shape(slide):
@@ -37,24 +28,20 @@ def _update_text_preserving_format(shape, new_text):
 
 def _find_date_table(slide):
     for shape in slide.shapes:
-        if shape.has_table and shape.table.rows.__len__() == 1 and shape.table.columns.__len__() == 1:
+        if shape.has_table and len(list(shape.table.rows)) == 1 and len(shape.table.columns) == 1:
             return shape
     return None
 
 
-def _replace_shapes_with_images(slide, name_to_img):
-    targets = {}
-    for shape in slide.shapes:
-        if shape.name in name_to_img and name_to_img[shape.name]:
-            targets[shape.name] = (shape.left, shape.top, shape.width, shape.height)
-
+def _replace_picture(slide, picture_name, img_bytes):
     for shape in list(slide.shapes):
-        if shape.name in targets:
+        if shape.name == picture_name:
+            left, top, width, height = shape.left, shape.top, shape.width, shape.height
             sp = shape._element
             sp.getparent().remove(sp)
-
-    for name, (left, top, width, height) in targets.items():
-        slide.shapes.add_picture(io.BytesIO(name_to_img[name]), left, top, width, height)
+            slide.shapes.add_picture(io.BytesIO(img_bytes), left, top, width, height)
+            return True
+    return False
 
 
 def _replace_first_picture(slide, img_bytes):
@@ -68,196 +55,305 @@ def _replace_first_picture(slide, img_bytes):
     return False
 
 
-def _replace_image(slide, old_image_name, img_bytes, left=None, top=None, width=None, height=None):
-    old_shape = None
-    for shape in slide.shapes:
-        if shape.name == old_image_name:
-            old_shape = shape
-            break
-    if old_shape is None:
-        for shape in slide.shapes:
-            if hasattr(shape, "image"):
-                try:
-                    _ = shape.image
-                    old_shape = shape
-                    break
-                except Exception:
-                    continue
-    if old_shape is None:
-        return
+def _table_image(headers, rows, col_widths=None, header_color="#4472C4",
+                 header_text_color="white", figsize=None, title=None, fontsize=9):
+    n_rows = len(rows)
+    if figsize is None:
+        figsize = (max(6, len(headers) * 1.2), max(2, 0.35 * n_rows + 0.8))
 
-    if left is None:
-        left = old_shape.left
-    if top is None:
-        top = old_shape.top
-    if width is None:
-        width = old_shape.width
-    if height is None:
-        height = old_shape.height
-
-    sp = old_shape._element
-    sp.getparent().remove(sp)
-
-    img_stream = io.BytesIO(img_bytes)
-    slide.shapes.add_picture(img_stream, left, top, width, height)
-
-
-def _make_cellhr_daily_chart(detail_df, col_map, target, date_range_str):
-    if "date" not in col_map or "cellhr" not in col_map:
-        return None
-
-    daily = detail_df.groupby(col_map["date"])[col_map["cellhr"]].sum().reset_index()
-    daily.columns = ["date", "cellhr"]
-    daily = daily.sort_values("date")
-
-    fig, ax = plt.subplots(figsize=(10, 5))
-    ax.bar(range(len(daily)), daily["cellhr"], color="#c0392b", width=0.6, edgecolor="white")
-    ax.axhline(y=target, color="#27ae60", linestyle="--", linewidth=2, label=f"Target: {target:,}")
-
-    for i, v in enumerate(daily["cellhr"]):
-        ax.text(i, v + target * 0.02, f"{v:,.0f}", ha="center", va="bottom", fontsize=8, fontweight="bold")
-
-    dates = [str(d)[:10] if hasattr(d, "strftime") else str(d)[:10] for d in daily["date"]]
-    ax.set_xticks(range(len(dates)))
-    ax.set_xticklabels(dates, rotation=45, ha="right", fontsize=8)
-    ax.set_ylabel("Cell*h", fontsize=11)
-    ax.set_title(f"AYY Cell*h Daily — {date_range_str}", fontsize=13, fontweight="bold")
-    ax.legend(fontsize=10)
-    ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"{x:,.0f}"))
-    ax.grid(axis="y", alpha=0.3)
-    fig.tight_layout()
-
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=150, bbox_inches="tight")
-    plt.close(fig)
-    buf.seek(0)
-    return buf.getvalue()
-
-
-def _make_cause_pie(detail_df, col_map):
-    if "reason_level1" not in col_map or "cellhr" not in col_map:
-        return None
-
-    cause = detail_df.groupby(col_map["reason_level1"])[col_map["cellhr"]].sum().reset_index()
-    cause.columns = ["cause", "cellhr"]
-    cause = cause[cause["cellhr"] > 0].sort_values("cellhr", ascending=False)
-
-    if cause.empty:
-        return None
-
-    colors = ["#c0392b", "#e67e22", "#f1c40f", "#2ecc71", "#3498db", "#9b59b6", "#1abc9c", "#95a5a6"]
-    fig, ax = plt.subplots(figsize=(5, 5))
-    wedges, texts, autotexts = ax.pie(
-        cause["cellhr"], labels=cause["cause"], autopct="%1.1f%%",
-        colors=colors[:len(cause)], startangle=90, pctdistance=0.75,
-        textprops={"fontsize": 8},
-    )
-    for t in autotexts:
-        t.set_fontsize(7)
-    ax.set_title("By Cause", fontsize=11, fontweight="bold")
-    fig.tight_layout()
-
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=150, bbox_inches="tight")
-    plt.close(fig)
-    buf.seek(0)
-    return buf.getvalue()
-
-
-def _make_worst_sites_table_image(df, col_map, title, top_n=15, color="#c0392b"):
-    if "site_id" not in col_map or "cellhr" not in col_map:
-        return None
-
-    agg = {col_map["cellhr"]: "sum"}
-    extra_cols = []
-    if "owner" in col_map:
-        agg[col_map["owner"]] = "first"
-        extra_cols.append(("owner", col_map["owner"]))
-    if "reason_level1" in col_map:
-        agg[col_map["reason_level1"]] = lambda x: x.mode().iloc[0] if len(x.mode()) > 0 else ""
-        extra_cols.append(("cause", col_map["reason_level1"]))
-
-    worst = df.groupby(col_map["site_id"]).agg(agg).reset_index()
-    worst = worst.sort_values(col_map["cellhr"], ascending=False).head(top_n)
-
-    headers = ["#", "Site ID", "Cell*h"]
-    col_keys = [None, col_map["site_id"], col_map["cellhr"]]
-    for label, col in extra_cols:
-        headers.append(label.title())
-        col_keys.append(col)
-
-    cell_text = []
-    for i, (_, row) in enumerate(worst.iterrows(), 1):
-        line = [str(i)]
-        for key in col_keys[1:]:
-            val = row[key]
-            if isinstance(val, float):
-                line.append(f"{val:,.0f}")
-            else:
-                line.append(str(val)[:25])
-        cell_text.append(line)
-
-    fig, ax = plt.subplots(figsize=(10, 0.4 * len(cell_text) + 1.2))
+    fig, ax = plt.subplots(figsize=figsize)
     ax.axis("off")
-    table = ax.table(
-        cellText=cell_text, colLabels=headers,
-        loc="center", cellLoc="center",
-    )
-    table.auto_set_font_size(False)
-    table.set_fontsize(9)
-    table.scale(1, 1.4)
+    ax.axis("tight")
 
-    for (row, col), cell in table.get_celld().items():
-        if row == 0:
-            cell.set_facecolor(color)
-            cell.set_text_props(color="white", fontweight="bold")
-        else:
-            cell.set_facecolor("#f9f9f9" if row % 2 == 0 else "white")
-        cell.set_edgecolor("#dddddd")
+    tbl = ax.table(cellText=rows, colLabels=headers, loc="center", cellLoc="center")
+    tbl.auto_set_font_size(False)
+    tbl.set_fontsize(fontsize)
+    tbl.scale(1, 1.5)
 
-    ax.set_title(title, fontsize=13, fontweight="bold", pad=10)
-    fig.tight_layout()
+    if col_widths:
+        for ci, w in enumerate(col_widths):
+            for ri in range(n_rows + 1):
+                tbl[ri, ci].set_width(w)
+
+    for ci in range(len(headers)):
+        cell = tbl[0, ci]
+        cell.set_facecolor(header_color)
+        cell.set_text_props(color=header_text_color, fontweight="bold")
+        cell.set_edgecolor("#b0b0b0")
+
+    for ri in range(1, n_rows + 1):
+        for ci in range(len(headers)):
+            cell = tbl[ri, ci]
+            cell.set_facecolor("#f5f5f5" if ri % 2 == 0 else "white")
+            cell.set_edgecolor("#b0b0b0")
+
+    last_row_idx = n_rows
+    if n_rows > 0 and rows[-1][0] in ("Total", "Tổng"):
+        for ci in range(len(headers)):
+            cell = tbl[last_row_idx, ci]
+            cell.set_facecolor("#FFFF00")
+            cell.set_text_props(fontweight="bold")
+
+    if title:
+        ax.set_title(title, fontsize=fontsize + 2, fontweight="bold", pad=8)
+    fig.tight_layout(pad=0.3)
 
     buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=150, bbox_inches="tight")
+    fig.savefig(buf, format="png", dpi=200, bbox_inches="tight",
+                facecolor="white", edgecolor="none")
     plt.close(fig)
     buf.seek(0)
     return buf.getvalue()
 
 
-def _make_team_cellhr_image(detail_df, col_map):
-    if "team" not in col_map or "cellhr" not in col_map:
+def _make_team_table(data, date_range_str):
+    """Slide 2 Picture 3: Team Cell*h table (Team, Target, Total Cell, Rate)"""
+    tco_df = data.get("tco_power", pd.DataFrame())
+    mytel_df = data.get("mytel_power", pd.DataFrame())
+    detail_df = data.get("cellhr_detail", pd.DataFrame())
+    col_map = data.get("col_map", {})
+
+    teams = {}
+
+    if not tco_df.empty:
+        tco_df["Total"] = pd.to_numeric(tco_df.get("Total", pd.Series()), errors="coerce")
+        team_col = "Unnamed: 0"
+        if team_col in tco_df.columns:
+            for team, grp in tco_df.dropna(subset=[team_col]).groupby(team_col):
+                t = str(team).strip()
+                if "TEAM" in t.upper():
+                    teams.setdefault(t, 0)
+                    teams[t] += grp["Total"].sum()
+
+    if not mytel_df.empty:
+        mytel_df["Total"] = pd.to_numeric(mytel_df.get("Total", pd.Series()), errors="coerce")
+        team_col = "Unnamed: 0"
+        if team_col in mytel_df.columns:
+            for team, grp in mytel_df.dropna(subset=[team_col]).groupby(team_col):
+                t = str(team).strip()
+                if "TEAM" in t.upper():
+                    teams.setdefault(t, 0)
+                    teams[t] += grp["Total"].sum()
+
+    if not detail_df.empty and "cellhr" in col_map:
+        ag_col = col_map.get("alarm_group")
+        if ag_col and ag_col in detail_df.columns:
+            for team, grp in detail_df.groupby(ag_col):
+                t = str(team).strip()
+                if "TEAM" in t.upper():
+                    other_causes = 0
+                    if "reason_level1" in col_map:
+                        non_power = grp[~grp[col_map["reason_level1"]].isin([
+                            "Towerco power issue", "Mytel Power Issue"
+                        ])]
+                        other_causes = non_power[col_map["cellhr"]].sum()
+                    teams.setdefault(t, 0)
+                    teams[t] += other_causes
+
+    if not teams:
         return None
 
-    team_data = detail_df.groupby(col_map["team"])[col_map["cellhr"]].sum().reset_index()
-    team_data.columns = ["team", "cellhr"]
-    team_data = team_data.sort_values("cellhr", ascending=True)
+    rpt_categories = data.get("cellhr_report", [])
+    total_cellhr = sum(teams.values())
+    total_target = sum(c.get("values", {}).values() for c in rpt_categories
+                       if c.get("category") == "Target") if rpt_categories else 0
 
-    fig, ax = plt.subplots(figsize=(5, 4))
-    bars = ax.barh(team_data["team"], team_data["cellhr"], color="#3498db", edgecolor="white")
-    for bar, v in zip(bars, team_data["cellhr"]):
-        ax.text(v + max(team_data["cellhr"]) * 0.01, bar.get_y() + bar.get_height() / 2,
-                f"{v:,.0f}", va="center", fontsize=8)
-    ax.set_xlabel("Cell*h", fontsize=10)
-    ax.set_title("Cell*h by Team", fontsize=11, fontweight="bold")
-    ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"{x:,.0f}"))
-    ax.grid(axis="x", alpha=0.3)
-    fig.tight_layout()
+    n_days = 1
+    if "date" in col_map and not detail_df.empty:
+        dates = pd.to_datetime(detail_df[col_map["date"]], errors="coerce").dropna().dt.date.nunique()
+        if dates > 0:
+            n_days = dates
 
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=150, bbox_inches="tight")
-    plt.close(fig)
-    buf.seek(0)
-    return buf.getvalue()
+    from config import CELLHR_TARGET
+    daily_target = CELLHR_TARGET
+    total_target_all = daily_target * n_days
+
+    n_teams = len(teams)
+    site_counts = {}
+    if not tco_df.empty and "Unnamed: 0" in tco_df.columns and "Sites" in tco_df.columns:
+        for team, grp in tco_df.dropna(subset=["Unnamed: 0"]).groupby("Unnamed: 0"):
+            t = str(team).strip()
+            if "TEAM" in t.upper():
+                site_counts[t] = grp["Sites"].nunique()
+
+    total_sites = sum(site_counts.values()) if site_counts else 1
+    rows = []
+    grand_target = 0
+    grand_total = 0
+    for team in sorted(teams.keys()):
+        total = teams[team]
+        if site_counts and team in site_counts:
+            target = total_target_all * site_counts[team] / total_sites
+        else:
+            target = total_target_all / n_teams
+        rate = (total / target * 100) if target > 0 else 0
+        rows.append([team, f"{target:.1f}", f"{total:.1f}", f"{rate:.1f}%"])
+        grand_target += target
+        grand_total += total
+
+    grand_rate = (grand_total / grand_target * 100) if grand_target > 0 else 0
+    rows.append(["Total", f"{grand_target:.0f}", f"{grand_total:.0f}", f"{grand_rate:.1f}%"])
+
+    headers = ["Team", "Target", "Total Cell", "Rate"]
+    return _table_image(headers, rows,
+                        header_color="#4472C4",
+                        figsize=(6.5, 0.35 * len(rows) + 0.8),
+                        title=f"AYY Cell*Hr {date_range_str}", fontsize=9)
+
+
+def _make_tco_summary_table(data):
+    """Slide 2 Picture 4: TCO breakdown table (TCO, Cell*h, Rate)"""
+    rpt = data.get("cellhr_report_raw")
+    if rpt is not None and len(rpt) > 47:
+        rows_data = []
+        total = 0
+        for i in range(35, 48):
+            row = rpt.iloc[i]
+            name = str(row.iloc[2]).strip() if pd.notna(row.iloc[2]) else ""
+            val = float(row.iloc[3]) if pd.notna(row.iloc[3]) else 0
+            if name:
+                rows_data.append((name, val))
+                total += val
+
+        rows = []
+        for name, val in rows_data:
+            rate = (val / total * 100) if total > 0 else 0
+            rows.append([name, f"{val:.1f}", f"{rate:.1f}%"])
+        rows.append(["Total", f"{total:.1f}", ""])
+
+        return _table_image(["TCO", "Cell*h", "Rate"], rows,
+                            header_color="#FFFF00", header_text_color="black",
+                            figsize=(3.8, 0.33 * len(rows) + 0.6), fontsize=8)
+
+    tco_df = data.get("tco_power", pd.DataFrame())
+    if tco_df.empty:
+        return None
+
+    tco_df["Total"] = pd.to_numeric(tco_df.get("Total", pd.Series()), errors="coerce")
+    if "TCO" not in tco_df.columns:
+        return None
+
+    summary = tco_df.dropna(subset=["TCO"]).groupby("TCO")["Total"].sum().reset_index()
+    summary.columns = ["TCO", "Cellhr"]
+    summary = summary.sort_values("Cellhr", ascending=False)
+    grand = summary["Cellhr"].sum()
+
+    rows = []
+    for _, r in summary.iterrows():
+        rate = (r["Cellhr"] / grand * 100) if grand > 0 else 0
+        rows.append([str(r["TCO"]), f"{r['Cellhr']:.1f}", f"{rate:.1f}%"])
+    rows.append(["Total", f"{grand:.1f}", ""])
+
+    return _table_image(["TCO", "Cell*h", "Rate"], rows,
+                        header_color="#FFFF00", header_text_color="black",
+                        figsize=(3.8, 0.33 * len(rows) + 0.6), fontsize=8)
+
+
+def _make_reason_table(data, date_range_str):
+    """Slide 2 Picture 5: Reason Group table (Reason Group, Cell*h Month, Rate)"""
+    categories = [
+        "Operation", "Towerco power issue", "Mytel Power Issue",
+        "Transmission", "Power down at HUB site", "Others",
+        "Equipment", "Small Cell Down", "Majeure cause"
+    ]
+
+    detail_df = data.get("cellhr_detail", pd.DataFrame())
+    col_map = data.get("col_map", {})
+
+    if detail_df.empty or "reason_level1" not in col_map or "cellhr" not in col_map:
+        return None
+
+    cause_data = detail_df.groupby(col_map["reason_level1"])[col_map["cellhr"]].sum()
+    grand = cause_data.sum()
+
+    rows = []
+    for cat in categories:
+        val = cause_data.get(cat, 0)
+        if pd.isna(val):
+            val = 0
+        rate = (val / grand * 100) if grand > 0 else 0
+        rows.append([cat, f"{val:.1f}", f"{rate:.1f}%"])
+    rows.append(["Total", f"{grand:.1f}", ""])
+
+    return _table_image(["Reason Group", f"Cell*h {date_range_str}", "Rate"], rows,
+                        header_color="#FFFF00", header_text_color="black",
+                        figsize=(4.0, 0.33 * len(rows) + 0.6), fontsize=8)
+
+
+def _make_tco_worst_table(data, date_range_str):
+    """Slide 3: TCO worst sites detailed table"""
+    tco_df = data.get("tco_power", pd.DataFrame())
+    if tco_df.empty or "Total" not in tco_df.columns:
+        return None
+
+    tco_df["Total"] = pd.to_numeric(tco_df["Total"], errors="coerce")
+    tco_df["Times down"] = pd.to_numeric(tco_df.get("Times down", pd.Series()), errors="coerce")
+
+    team_col = "Unnamed: 0"
+    tco_col = "TCO"
+    site_col = "Sites"
+
+    has_site = tco_df[site_col].astype(str).str.startswith("AYY") if site_col in tco_df.columns else pd.Series(False, index=tco_df.index)
+    worst = tco_df[has_site & (tco_df["Total"] > 0)].sort_values("Total", ascending=False).head(25)
+    if worst.empty:
+        return None
+
+    rows = []
+    for _, r in worst.iterrows():
+        site = str(r.get(site_col, "")) if pd.notna(r.get(site_col)) else ""
+        tco = str(r.get(tco_col, "")) if pd.notna(r.get(tco_col)) else ""
+        team = str(r.get(team_col, "")) if pd.notna(r.get(team_col)) else ""
+        cellhr = r["Total"]
+        days = int(r["Times down"]) if pd.notna(r.get("Times down")) else 0
+        rows.append([site, tco, team, f"{cellhr:.0f}", str(days)])
+
+    headers = ["Site", "TCO", "Team",
+               "Cell down affect\nTCO Power Issue",
+               "Number of days\ndown"]
+
+    return _table_image(headers, rows,
+                        header_color="#D4A017", header_text_color="black",
+                        figsize=(12, 0.32 * len(rows) + 1.0), fontsize=8)
+
+
+def _make_power_worst_table(data, date_range_str):
+    """Slide 4: Power worst sites detailed table"""
+    mytel_df = data.get("mytel_power", pd.DataFrame())
+    if mytel_df.empty or "Total" not in mytel_df.columns:
+        return None
+
+    mytel_df["Total"] = pd.to_numeric(mytel_df["Total"], errors="coerce")
+    mytel_df["Times down"] = pd.to_numeric(mytel_df.get("Times down", pd.Series()), errors="coerce")
+
+    team_col = "Unnamed: 0"
+    tco_col = "Unnamed: 1"
+    site_col = "Unnamed: 2"
+
+    has_site = mytel_df[site_col].astype(str).str.startswith("AYY") if site_col in mytel_df.columns else pd.Series(False, index=mytel_df.index)
+    worst = mytel_df[has_site & (mytel_df["Total"] > 0)].sort_values("Total", ascending=False).head(15)
+    if worst.empty:
+        return None
+
+    rows = []
+    for _, r in worst.iterrows():
+        site = str(r.get(site_col, "")) if pd.notna(r.get(site_col)) else ""
+        tco = str(r.get(tco_col, "")) if pd.notna(r.get(tco_col)) else ""
+        team = str(r.get(team_col, "")) if pd.notna(r.get(team_col)) else ""
+        power = r["Total"]
+        days = int(r["Times down"]) if pd.notna(r.get("Times down")) else 0
+        rows.append([site, tco, team, f"{power:.0f}", str(days)])
+
+    headers = ["Site", "TCO", "Team", "Power", "Number of days down"]
+
+    return _table_image(headers, rows,
+                        header_color="#D4A017", header_text_color="black",
+                        figsize=(12, 0.32 * len(rows) + 1.0), fontsize=8)
 
 
 def generate_report(template_path, data, week_num):
     prs = Presentation(template_path)
     detail_df = data.get("cellhr_detail", pd.DataFrame())
     col_map = data.get("col_map", {})
-    tco_df = data.get("tco_power", pd.DataFrame())
-    mytel_df = data.get("mytel_power", pd.DataFrame())
-    tx_report = data.get("tx_report", pd.DataFrame())
 
     if "date" in col_map and not detail_df.empty:
         dates = pd.to_datetime(detail_df[col_map["date"]], errors="coerce").dropna()
@@ -270,10 +366,16 @@ def generate_report(template_path, data, week_num):
     else:
         date_range_str = f"Week {week_num}"
 
-    from config import CELLHR_TARGET
-    target = CELLHR_TARGET
+    # Read raw Cell_h Report for TCO breakdown data
+    cellhr_bytes = data.get("_cellhr_bytes")
+    if cellhr_bytes:
+        try:
+            data["cellhr_report_raw"] = pd.read_excel(
+                io.BytesIO(cellhr_bytes), sheet_name="Cell_h Report", header=None)
+        except Exception:
+            data["cellhr_report_raw"] = None
 
-    # === SLIDE 2: Cell*h Overview ===
+    # === SLIDE 2: Cell*h Overview (3 tables as images) ===
     if len(prs.slides) >= 2:
         slide2 = prs.slides[1]
         title_shape = _find_title_shape(slide2)
@@ -282,15 +384,18 @@ def generate_report(template_path, data, week_num):
 
         date_tbl = _find_date_table(slide2)
         if date_tbl and date_tbl.has_table:
-            date_tbl.table.rows[0].cells[0].text = f"{date_range_str} Week {week_num}"
+            date_tbl.table.rows[0].cells[0].text = f"{date_range_str}"
 
-        if not detail_df.empty:
-            chart_img = _make_cellhr_daily_chart(detail_df, col_map, target, date_range_str)
-            cause_img = _make_cause_pie(detail_df, col_map)
-            team_img = _make_team_cellhr_image(detail_df, col_map)
+        team_img = _make_team_table(data, date_range_str)
+        tco_img = _make_tco_summary_table(data)
+        reason_img = _make_reason_table(data, date_range_str)
 
-            replacements = {"Picture 3": chart_img, "Picture 4": cause_img, "Picture 5": team_img}
-            _replace_shapes_with_images(slide2, replacements)
+        if team_img:
+            _replace_picture(slide2, "Picture 3", team_img)
+        if tco_img:
+            _replace_picture(slide2, "Picture 4", tco_img)
+        if reason_img:
+            _replace_picture(slide2, "Picture 5", reason_img)
 
     # === SLIDE 3: TCO worst sites ===
     if len(prs.slides) >= 3:
@@ -303,24 +408,9 @@ def generate_report(template_path, data, week_num):
         if date_tbl3 and date_tbl3.has_table:
             date_tbl3.table.rows[0].cells[0].text = f"Cell/Hr Tco worst sites list {date_range_str}"
 
-        if not tco_df.empty:
-            tco_col_map = {}
-            for col in tco_df.columns:
-                cl = str(col).lower().strip()
-                if cl == "sites" or (cl == "site_id"):
-                    tco_col_map["site_id"] = col
-                elif cl == "total" or ("cell*h" in cl) or ("cellhr" in cl):
-                    tco_col_map["cellhr"] = col
-                elif cl == "tco" or cl == "owner":
-                    tco_col_map["owner"] = col
-
-            if "cellhr" in tco_col_map:
-                tco_df[tco_col_map["cellhr"]] = pd.to_numeric(tco_df[tco_col_map["cellhr"]], errors="coerce")
-
-            tco_img = _make_worst_sites_table_image(tco_df, tco_col_map,
-                                                     f"TCO Worst Sites — {date_range_str}", color="#e67e22")
-            if tco_img:
-                _replace_first_picture(slide3, tco_img)
+        tco_worst_img = _make_tco_worst_table(data, date_range_str)
+        if tco_worst_img:
+            _replace_first_picture(slide3, tco_worst_img)
 
     # === SLIDE 4: Power worst sites ===
     if len(prs.slides) >= 4:
@@ -333,60 +423,23 @@ def generate_report(template_path, data, week_num):
         if date_tbl4 and date_tbl4.has_table:
             date_tbl4.table.rows[0].cells[0].text = f"Cell/Hr Power down worst sites list {date_range_str}"
 
-        if not detail_df.empty and "reason_level1" in col_map:
-            power_causes = ["Towerco power issue", "Mytel Power Issue", "Power down at HUB site"]
-            power_df = detail_df[detail_df[col_map["reason_level1"]].isin(power_causes)]
-            if not power_df.empty:
-                power_img = _make_worst_sites_table_image(power_df, col_map,
-                                                          f"Power Down Worst Sites — {date_range_str}", color="#c0392b")
-                if power_img:
-                    _replace_first_picture(slide4, power_img)
+        power_worst_img = _make_power_worst_table(data, date_range_str)
+        if power_worst_img:
+            _replace_first_picture(slide4, power_worst_img)
 
-    # === SLIDE 16-17: Weekly Transmission ===
-    if len(prs.slides) >= 16 and not tx_report.empty:
-        slide16 = prs.slides[15]
-        title16 = _find_title_shape(slide16)
-        if title16:
-            _update_text_preserving_format(title16, f"2.1, INCIDENT TRANSMISSION {date_range_str}")
-
-    if len(prs.slides) >= 17:
-        slide17 = prs.slides[16]
-        title17 = _find_title_shape(slide17)
-        if title17:
-            _update_text_preserving_format(title17, f"2.2  INCIDENT TRANSMISSION {date_range_str}")
-
-        if not detail_df.empty and "reason_level1" in col_map:
-            tx_detail = data.get("tx_detail", pd.DataFrame())
-            if not tx_detail.empty:
-                route_col = None
-                for col in tx_detail.columns:
-                    cl = str(col).lower()
-                    if "route" in cl or "cable" in cl or "link" in cl:
-                        route_col = col
-                        break
-
-                if route_col:
-                    route_counts = tx_detail[route_col].value_counts().reset_index()
-                    route_counts.columns = ["route", "incidents"]
-                    repeated = route_counts[route_counts["incidents"] >= 2].sort_values("incidents", ascending=False)
-
-                    if not repeated.empty:
-                        for shape in slide17.shapes:
-                            if shape.name == "TextBox 7" and shape.has_text_frame:
-                                tf = shape.text_frame
-                                tf.clear()
-                                p0 = tf.paragraphs[0]
-                                run0 = p0.add_run()
-                                run0.text = "These are list routes happened >=2 incidents:"
-                                run0.font.bold = True
-                                run0.font.size = Pt(14)
-
-                                for i, (_, row) in enumerate(repeated.head(10).iterrows(), 1):
-                                    p = tf.add_paragraph()
-                                    r = p.add_run()
-                                    r.text = f"{i}. {row['route']} — {row['incidents']} times"
-                                    r.font.size = Pt(12)
-                                break
+    # === SLIDES 9-10, 16-17: Transmission ===
+    for si in [8, 15]:
+        if len(prs.slides) > si:
+            title_s = _find_title_shape(prs.slides[si])
+            if title_s:
+                _update_text_preserving_format(
+                    title_s, f"2.1, INCIDENT TRANSMISSION {date_range_str}")
+    for si in [9, 16]:
+        if len(prs.slides) > si:
+            title_s = _find_title_shape(prs.slides[si])
+            if title_s:
+                _update_text_preserving_format(
+                    title_s, f"2.2  INCIDENT TRANSMISSION {date_range_str}")
 
     # === SLIDE 40 (last): Thank You date ===
     last_slide = prs.slides[-1]
