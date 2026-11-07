@@ -6,3 +6,5 @@ ayy_actions.json
 .DS_Store
 *.xlsx
 *.xls
+!data/*.xlsx
+!templates/*.pptx

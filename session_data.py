@@ -1,7 +1,11 @@
 import io
+import os
 import hashlib
 import pandas as pd
 import streamlit as st
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DEFAULT_SUMMARY = os.path.join(BASE_DIR, "data", "SUMMARY_AYY_Database.xlsx")
 
 
 def _map_cellhr_columns(df):
@@ -136,7 +140,10 @@ def _parse_summary(summary_hash, summary_bytes):
     data["site_db"] = _safe_read(summary_bytes, "AYY_Site database")
     data["cable_routes"] = _safe_read(summary_bytes, "Cable Routes Database")
     data["flood_sites"] = _safe_read(summary_bytes, "Flood sites")
-    data["mw_links"] = _safe_read(summary_bytes, "AYY_MW link")
+    mw = _safe_read(summary_bytes, "AYY_MW link")
+    if mw.empty:
+        mw = _safe_read(summary_bytes, "AYY _ MW link")
+    data["mw_links"] = mw
     return data
 
 
@@ -147,6 +154,10 @@ def _file_hash(file_bytes):
 def process_uploads(cellhr_bytes, summary_bytes=None):
     cellhr_h = _file_hash(cellhr_bytes)
     data = _parse_cellhr(cellhr_h, cellhr_bytes)
+
+    if not summary_bytes and os.path.isfile(DEFAULT_SUMMARY):
+        with open(DEFAULT_SUMMARY, "rb") as f:
+            summary_bytes = f.read()
 
     if summary_bytes:
         summary_h = _file_hash(summary_bytes)

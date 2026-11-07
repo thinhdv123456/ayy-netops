@@ -31,8 +31,13 @@ with tab_upload:
     )
 
     st.markdown("**" + ("File tùy chọn:" if lang == "vi" else "Optional file:") + "**")
+    st.caption("📋 " + (
+        "SUMMARY_AYY Database đã có sẵn trên server. Upload bên dưới nếu muốn dùng bản mới hơn."
+        if lang == "vi" else
+        "SUMMARY_AYY Database is pre-loaded on server. Upload below only to use a newer version."
+    ))
     summary_file = st.file_uploader(
-        "📋 SUMMARY_AYY Database.xlsx",
+        "📋 SUMMARY_AYY Database.xlsx (" + ("thay thế" if lang == "vi" else "override") + ")",
         type=["xlsx", "xls"],
         key="upload_summary",
     )
