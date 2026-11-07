@@ -42,7 +42,8 @@ with tab_upload:
         if summary_file:
             st.markdown(f"- **{summary_file.name}** ({summary_file.size / 1024:.0f} KB)")
 
-        if st.button("🚀 " + ("Xử lý dữ liệu" if lang == "vi" else "Process Data"), type="primary"):
+        auto_process = not data or not data.get("has_data")
+        if auto_process or st.button("🚀 " + ("Xử lý dữ liệu" if lang == "vi" else "Process Data"), type="primary"):
             with st.spinner("Đang xử lý..." if lang == "vi" else "Processing..."):
                 cellhr_bytes = cellhr_file.getvalue()
                 summary_bytes = summary_file.getvalue() if summary_file else None
@@ -56,7 +57,10 @@ with tab_upload:
                     total = detail_df[col_map["cellhr"]].sum() if "cellhr" in col_map else 0
                     st.success(f"✅ {'Đã xử lý xong!' if lang == 'vi' else 'Done!'} — "
                                f"{len(detail_df):,} records, {total:,.0f} Cell*h")
-                    st.rerun()
+                    if not auto_process:
+                        st.rerun()
+                    else:
+                        data = result
     elif not data:
         st.info("📁 " + ("Kéo thả file Excel vào đây hoặc bấm Browse" if lang == "vi"
                           else "Drag & drop Excel files here or click Browse"))

@@ -1,4 +1,5 @@
 import io
+import hashlib
 import pandas as pd
 import streamlit as st
 
@@ -82,7 +83,9 @@ def _safe_read(file_bytes, sheet, header=0):
         return pd.DataFrame()
 
 
-def process_uploads(cellhr_bytes, summary_bytes=None):
+@st.cache_data(show_spinner=False)
+def _parse_cellhr(cellhr_hash, cellhr_bytes):
+    """Parse all sheets from the Cell*h Excel file. Cached by file hash."""
     data = {}
 
     try:
@@ -122,17 +125,41 @@ def process_uploads(cellhr_bytes, summary_bytes=None):
     data["tx_detail"] = _safe_read(cellhr_bytes, "TX Detail")
     data["hub_down"] = _safe_read(cellhr_bytes, "Hub down")
 
+    return data
+
+
+@st.cache_data(show_spinner=False)
+def _parse_summary(summary_hash, summary_bytes):
+    """Parse all sheets from the Summary Excel file. Cached by file hash."""
+    data = {}
+    data["manpower"] = _safe_read(summary_bytes, "Manpower")
+    data["site_db"] = _safe_read(summary_bytes, "AYY_Site database")
+    data["cable_routes"] = _safe_read(summary_bytes, "Cable Routes Database")
+    data["flood_sites"] = _safe_read(summary_bytes, "Flood sites")
+    data["mw_links"] = _safe_read(summary_bytes, "AYY_MW link")
+    return data
+
+
+def _file_hash(file_bytes):
+    return hashlib.md5(file_bytes).hexdigest()
+
+
+def process_uploads(cellhr_bytes, summary_bytes=None):
+    cellhr_h = _file_hash(cellhr_bytes)
+    data = _parse_cellhr(cellhr_h, cellhr_bytes)
+
     if summary_bytes:
-        data["manpower"] = _safe_read(summary_bytes, "Manpower")
-        data["site_db"] = _safe_read(summary_bytes, "AYY_Site database")
-        data["cable_routes"] = _safe_read(summary_bytes, "Cable Routes Database")
-        data["flood_sites"] = _safe_read(summary_bytes, "Flood sites")
-        data["mw_links"] = _safe_read(summary_bytes, "AYY_MW link")
+        summary_h = _file_hash(summary_bytes)
+        summary_data = _parse_summary(summary_h, summary_bytes)
+        data.update(summary_data)
     else:
         for key in ["manpower", "site_db", "cable_routes", "flood_sites", "mw_links"]:
             data[key] = pd.DataFrame()
 
     data["has_data"] = True
+    data["_cellhr_hash"] = cellhr_h
+    if summary_bytes:
+        data["_summary_hash"] = _file_hash(summary_bytes)
     st.session_state["app_data"] = data
     return data
 
