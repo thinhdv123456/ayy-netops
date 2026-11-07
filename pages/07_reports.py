@@ -3,10 +3,12 @@ import io
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-from config import DATA_DIR, CELLHR_TARGET
+from config import DATA_DIR, CELLHR_TARGET, BASE_DIR
 from i18n import t
 from data_loader import find_data_files, load_cellhr_detail, load_tco_power, load_mytel_power, load_manpower
 from database import query_cellhr_events, query_cellhr_summary, get_import_history
+
+TEMPLATE_DIR = os.path.join(BASE_DIR, "templates")
 
 lang = st.session_state.get("lang", "vi")
 st.markdown(f"## 📈 {t('reports', lang)}")
@@ -35,34 +37,23 @@ with tab_weekly:
     data_file = st.selectbox("📂 Data file:", cellhr_files,
                              format_func=lambda x: os.path.basename(x), key="rpt_data")
 
-    templates = [f for f in os.listdir(DATA_DIR)
-                 if f.endswith(".pptx") and "Week" in f]
+    all_templates = {}
+    for search_dir in [TEMPLATE_DIR, DATA_DIR]:
+        if os.path.isdir(search_dir):
+            for f in os.listdir(search_dir):
+                if f.endswith(".pptx") and "Week" in f:
+                    all_templates[f] = os.path.join(search_dir, f)
 
-    if not templates:
+    if not all_templates:
         st.warning("⚠️ " + (
-            "Chưa có file template PPTX. Hãy tải lên file template bên dưới."
+            "Chưa có file template PPTX."
             if lang == "vi" else
-            "No PPTX templates found. Upload a template below."
+            "No PPTX templates found."
         ))
-
-        uploaded_tpl = st.file_uploader(
-            "📝 " + ("Tải lên template PPTX (tên chứa 'Week')" if lang == "vi"
-                     else "Upload PPTX template (name must contain 'Week')"),
-            type=["pptx"],
-            key="pptx_template_upload",
-        )
-        if uploaded_tpl:
-            tpl_name = uploaded_tpl.name
-            if "Week" not in tpl_name:
-                tpl_name = f"Week_Report_Template_{tpl_name}"
-            dest = os.path.join(DATA_DIR, tpl_name)
-            with open(dest, "wb") as f:
-                f.write(uploaded_tpl.getbuffer())
-            st.success(f"✅ {'Đã lưu template' if lang == 'vi' else 'Template saved'}: {tpl_name}")
-            st.rerun()
     else:
-        template = st.selectbox("📝 Template:", templates, key="rpt_template")
-        template_path = os.path.join(DATA_DIR, template)
+        template_names = list(all_templates.keys())
+        template = st.selectbox("📝 Template:", template_names, key="rpt_template")
+        template_path = all_templates[template]
 
         week_num = st.number_input("Week #", min_value=1, max_value=52, value=45)
 
