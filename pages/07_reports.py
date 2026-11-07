@@ -64,41 +64,41 @@ with tab_weekly:
 
     week_num = st.number_input("Week #", min_value=1, max_value=52, value=45)
 
-        st.markdown("**" + ("Dữ liệu sẽ được tự động điền vào:" if lang == "vi" else "Data will be auto-filled into:") + "**")
-        auto_items = [
-            "Slide 2: Cell*h overview (biểu đồ + số liệu)" if lang == "vi" else "Slide 2: Cell*h overview (charts + data)",
-            "Slide 3: TCO worst sites" if lang == "vi" else "Slide 3: TCO worst sites",
-            "Slide 4: Power worst sites" if lang == "vi" else "Slide 4: Power worst sites",
-            "Slide 16-17: Transmission incidents" if lang == "vi" else "Slide 16-17: Transmission incidents",
-            "Slide cuối: Ngày báo cáo" if lang == "vi" else "Last slide: Report date",
-        ]
-        for item in auto_items:
-            st.markdown(f"  - {item}")
+    st.markdown("**" + ("Dữ liệu sẽ được tự động điền vào:" if lang == "vi" else "Data will be auto-filled into:") + "**")
+    auto_items = [
+        "Slide 2: Cell*h overview (biểu đồ + số liệu)" if lang == "vi" else "Slide 2: Cell*h overview (charts + data)",
+        "Slide 3: TCO worst sites" if lang == "vi" else "Slide 3: TCO worst sites",
+        "Slide 4: Power worst sites" if lang == "vi" else "Slide 4: Power worst sites",
+        "Slide 16-17: Transmission incidents" if lang == "vi" else "Slide 16-17: Transmission incidents",
+        "Slide cuối: Ngày báo cáo" if lang == "vi" else "Last slide: Report date",
+    ]
+    for item in auto_items:
+        st.markdown(f"  - {item}")
 
     if (template_path or template_bytes) and st.button("🚀 " + ("Tạo báo cáo" if lang == "vi" else "Generate Report"), type="primary"):
-            try:
-                from report_generator import generate_report
-                with st.spinner("Đang tạo báo cáo..." if lang == "vi" else "Generating report..."):
-                    if template_bytes:
-                        import tempfile
-                        with tempfile.NamedTemporaryFile(suffix=".pptx", delete=False) as tmp:
-                            tmp.write(template_bytes)
-                            tmp_path = tmp.name
-                        buf = generate_report(tmp_path, data, week_num)
-                        os.unlink(tmp_path)
-                    else:
-                        buf = generate_report(template_path, data, week_num)
-                output_name = f"Week-{week_num}_Report_{datetime.now().strftime('%d_%b_%y')}.pptx"
+        try:
+            from report_generator import generate_report
+            with st.spinner("Đang tạo báo cáo..." if lang == "vi" else "Generating report..."):
+                if template_bytes:
+                    import tempfile
+                    with tempfile.NamedTemporaryFile(suffix=".pptx", delete=False) as tmp:
+                        tmp.write(template_bytes)
+                        tmp_path = tmp.name
+                    buf = generate_report(tmp_path, data, week_num)
+                    os.unlink(tmp_path)
+                else:
+                    buf = generate_report(template_path, data, week_num)
+            output_name = f"Week-{week_num}_Report_{datetime.now().strftime('%d_%b_%y')}.pptx"
 
-                st.success(f"✅ {output_name}")
-                st.download_button(
-                    "📥 Download PPTX", buf, file_name=output_name,
-                    mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
-                )
-            except Exception as e:
-                st.error(f"Error: {e}")
-                import traceback
-                st.code(traceback.format_exc())
+            st.success(f"✅ {output_name}")
+            st.download_button(
+                "📥 Download PPTX", buf, file_name=output_name,
+                mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            )
+        except Exception as e:
+            st.error(f"Error: {e}")
+            import traceback
+            st.code(traceback.format_exc())
 
 with tab_excel:
     st.subheader(t("export_excel", lang))
